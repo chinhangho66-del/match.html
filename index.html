@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SEN 視覺配對遊戲</title>
+    <style>
+        :root {
+            --bg: #000;
+            --card-bg: #1a1a1a;
+            --highlight: #ffffff;
+            --success: #27ae60;
+        }
+
+        body { 
+            background-color: var(--bg); 
+            color: white; 
+            margin: 0; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden; 
+            touch-action: none;
+        }
+
+        /* 開始介面 - 解決瀏覽器聲音限制 */
+        #overlay {
+            position: fixed; inset: 0; background: var(--bg);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 2000;
+        }
+
+        .big-btn {
+            padding: 40px 80px; font-size: 48px; cursor: pointer;
+            background: #2980b9; color: white; border: none; border-radius: 30px;
+            box-shadow: 0 10px 0 #1a5276; transition: 0.1s;
+        }
+        .big-btn:active { transform: translateY(10px); box-shadow: 0 0 0 #1a5276; }
+
+        /* 遊戲主體 */
+        #app { display: flex; flex-direction: column; height: 100vh; opacity: 0; transition: opacity 0.5s; }
+        
+        .nav { 
+            background: #222; padding: 10px 20px; display: flex; justify-content: space-between; 
+            align-items: center; border-bottom: 2px solid #444; 
+        }
+
+        .main-stage { flex: 1; display: flex; flex-direction: column; position: relative; }
+        
+        .target-area { 
+            flex: 1.2; display: flex; flex-direction: column; justify-content: center; 
+            align-items: center; border-bottom: 3px dashed #333;
+        }
+
+        .target-box {
+            width: 200px; height: 200px; border: 10px solid #444; border-radius: 40px;
+            display: flex; justify-content: center; align-items: center; background: #080808;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .options-area { 
+            flex: 1; display: flex; justify-content: space-around; align-items: center; 
+            padding: 0 20px; background: rgba(255,255,255,0.02);
+        }
+
+        .shape-card {
+            width: 160px; height: 160px; background: var(--card-bg); border-radius: 25px;
+            display: flex; justify-content: center; align-items: center;
+            position: relative; transition: 0.3s; cursor: pointer;
+        }
+
+        /* 掃描高亮 */
+        .highlight { 
+            outline: 12px solid var(--highlight); outline-offset: 8px; 
+            transform: scale(1.15); background: #333; z-index: 10;
+        }
+
+        /* 答對動畫 */
+        .correct-anim { transform: scale(1.4); border-color: var(--success) !important; }
+        .win-flash { background-color: #06331a !important; }
+
+        svg { width: 75%; height: 75%; }
+        
+        .gaze-track {
+            position: absolute; bottom: -20px; left: 0; width: 100%; height: 10px;
+            background: #222; border-radius: 5px; overflow: hidden;
+        }
+        .gaze-fill { height: 100%; background: white; width: 0%; }
+        
+        .mode-indicator { font-size: 18px; color: #aaa; }
+    </style>
+</head>
+<body>
+
+<div id="overlay">
+    <h1 style="margin-bottom: 40px;">視覺配對練習</h1>
+    <button class="big-btn" onclick="initStart()">開始</button>
+</div>
+
+<div id="app">
+    <div class="nav">
+        <button onclick="toggleMode()" id="modeBtn">切換至：掃描模式</button>
+        <div class="mode-indicator" id="statusText">當前：拖拉 / 點擊模式</div>
+        <button onclick="toggleFullScreen()">全螢幕</button>
+    </div>
+
+    <div class="main-stage">
+        <div class="target-area">
+            <div style="font-size: 24px; margin-bottom: 15px; color: #888;">請找出這個圖形：</div>
+            <div class="target-box" id="targetBox"></div>
+        </div>
+
+        <div class="options-area" id="optionsGrid">
+            </div>
+    </div>
+</div>
+
+<script>
+    const shapes = [
+        { id: 'star', name: '星型', color: '#f1c40f', svg: '<svg viewBox="0 0 100 100"><polygon points="50,5 61,35 95,35 67,57 78,91 50,70 22,91 33,57 5,35 39,35" fill="currentColor"/></svg>' },
+        { id: 'circle', name: '圓形', color: '#3498db', svg: '<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="currentColor"/></svg>' },
+        { id: 'triangle', name: '三角形', color: '#e74c3c', svg: '<svg viewBox="0 0 100 100"><polygon points="50,15 90,85 10,85" fill="currentColor"/></svg>' },
+        { id: 'square', name: '正方形', color: '#2ecc71', svg: '<svg viewBox="0 0 100 100"><rect x="15" y="15" width="70" height="70" fill="currentColor"/></svg>' }
+    ];
+
+    let currentTarget = null;
+    let isScanMode = false;
+    let scanIdx = -1;
+    let scanTimer = null;
+    let isProcessing = false;
+
+    function speak(text) {
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = 'zh-HK';
+        utter.rate = 0.8;
+        window.speechSynthesis.speak(utter);
+    }
+
+    function initStart() {
+        document.getElementById('overlay').style.display = 'none';
+        document.getElementById('app').style.opacity = '1';
+        newRound();
+    }
+
+    function newRound() {
+        isProcessing = false;
+        document.body.classList.remove('win-flash');
+        document.getElementById('targetBox').classList.remove('correct-anim');
+        
+        // 洗牌選項
+        const shuffled = [...shapes].sort(() => Math.random() - 0.5);
+        const grid = document.getElementById('optionsGrid');
+        grid.innerHTML = '';
+
+        shuffled.forEach(s => {
+            const card = document.createElement('div');
+            card.className = 'shape-card';
+            card.id = s.id;
+            card.style.color = s.color;
+            card.innerHTML = s.svg + `<div class="gaze-track"><div class="gaze-fill" id="fill-${s.id}"></div></div>`;
+            
+            card.onclick = () => { if(!isScanMode) checkMatch(s.id); };
+            grid.appendChild(card);
+        });
+
+        // 設定目標
+        currentTarget = shapes[Math.floor(Math.random() * shapes.length)];
+        document.getElementById('targetBox').innerHTML = currentTarget.svg;
+        document.getElementById('targetBox').style.color = currentTarget.color;
+
+        setTimeout(() => speak(`請搵出${currentTarget.name}`), 300);
+        
+        if(isScanMode) startScanning();
+    }
+
+    function checkMatch(id) {
+        if(isProcessing) return;
+        isProcessing = true;
+        clearInterval(scanTimer);
+
+        if(id === currentTarget.id) {
+            document.body.classList.add('win-flash');
+            document.getElementById('targetBox').classList.add('correct-anim');
+            speak("答對了，好叻呀！");
+            setTimeout(newRound, 2500);
+        } else {
+            speak("唔啱喎，再試下");
+            setTimeout(() => {
+                isProcessing = false;
+                if(isScanMode) startScanning();
+            }, 1200);
+        }
+    }
+
+    function startScanning() {
+        clearInterval(scanTimer);
+        const cards = document.querySelectorAll('.shape-card');
+        scanIdx = -1;
+        
+        const scan = () => {
+            scanIdx = (scanIdx + 1) % cards.length;
+            cards.forEach(c => c.classList.remove('highlight'));
+            cards[scanIdx].classList.add('highlight');
+            // 掃描時讀出形狀名（可選）
+            // speak(shapes.find(s => s.id === cards[scanIdx].id).name);
+        };
+        scan();
+        scanTimer = setInterval(scan, 2500);
+    }
+
+    function toggleMode() {
+        isScanMode = !isScanMode;
+        document.getElementById('modeBtn').innerText = isScanMode ? "切換至：拖拉模式" : "切換至：掃描模式";
+        document.getElementById('statusText').innerText = isScanMode ? "當前：拍制掃描模式" : "當前：拖拉 / 點擊模式";
+        if(isScanMode) startScanning(); else {
+            clearInterval(scanTimer);
+            document.querySelectorAll('.shape-card').forEach(c => c.classList.remove('highlight'));
+        }
+    }
+
+    function toggleFullScreen() {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+        else document.exitFullscreen();
+    }
+
+    // 拍制支援 (空白鍵)
+    window.addEventListener('keydown', (e) => {
+        if(e.code === 'Space' && isScanMode && !isProcessing) {
+            const cards = document.querySelectorAll('.shape-card');
+            if(scanIdx !== -1) checkMatch(cards[scanIdx].id);
+        }
+    });
+</script>
+</body>
+</html>
