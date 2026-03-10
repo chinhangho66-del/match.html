@@ -13,181 +13,191 @@
         }
 
         body { 
-            background-color: var(--bg); 
-            color: white; 
-            margin: 0; 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            overflow: hidden; 
-            touch-action: none;
+            background-color: var(--bg); color: white; margin: 0; 
+            font-family: sans-serif; overflow: hidden; touch-action: none;
         }
 
-        /* 開始介面 - 解決瀏覽器聲音限制 */
         #overlay {
             position: fixed; inset: 0; background: var(--bg);
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-            z-index: 2000;
+            display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 2000;
         }
 
         .big-btn {
-            padding: 40px 80px; font-size: 48px; cursor: pointer;
-            background: #2980b9; color: white; border: none; border-radius: 30px;
-            box-shadow: 0 10px 0 #1a5276; transition: 0.1s;
-        }
-        .big-btn:active { transform: translateY(10px); box-shadow: 0 0 0 #1a5276; }
-
-        /* 遊戲主體 */
-        #app { display: flex; flex-direction: column; height: 100vh; opacity: 0; transition: opacity 0.5s; }
-        
-        .nav { 
-            background: #222; padding: 10px 20px; display: flex; justify-content: space-between; 
-            align-items: center; border-bottom: 2px solid #444; 
+            padding: 30px 60px; font-size: 40px; cursor: pointer;
+            background: #2980b9; color: white; border: none; border-radius: 20px;
         }
 
-        .main-stage { flex: 1; display: flex; flex-direction: column; position: relative; }
+        #app { display: flex; flex-direction: column; height: 100vh; visibility: hidden; }
         
+        .nav { background: #222; padding: 10px; display: flex; gap: 10px; border-bottom: 2px solid #444; }
+        .nav button { padding: 10px; font-size: 16px; cursor: pointer; }
+
+        .main-stage { flex: 1; display: flex; flex-direction: column; }
+        
+        /* 上方目標區 */
         .target-area { 
-            flex: 1.2; display: flex; flex-direction: column; justify-content: center; 
+            flex: 1; display: flex; flex-direction: column; justify-content: center; 
             align-items: center; border-bottom: 3px dashed #333;
         }
 
         .target-box {
-            width: 200px; height: 200px; border: 10px solid #444; border-radius: 40px;
-            display: flex; justify-content: center; align-items: center; background: #080808;
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            width: 180px; height: 180px; border: 8px solid #444; border-radius: 30px;
+            display: flex; justify-content: center; align-items: center; transition: 0.3s;
         }
 
+        /* 下方選項區 */
         .options-area { 
-            flex: 1; display: flex; justify-content: space-around; align-items: center; 
-            padding: 0 20px; background: rgba(255,255,255,0.02);
+            flex: 1; display: flex; justify-content: space-around; align-items: center; padding: 0 20px;
         }
 
         .shape-card {
-            width: 160px; height: 160px; background: var(--card-bg); border-radius: 25px;
+            width: 140px; height: 140px; background: var(--card-bg); border-radius: 20px;
             display: flex; justify-content: center; align-items: center;
-            position: relative; transition: 0.3s; cursor: pointer;
+            position: relative; cursor: pointer; touch-action: none; /* 重要：防止手機拖放衝突 */
         }
 
-        /* 掃描高亮 */
-        .highlight { 
-            outline: 12px solid var(--highlight); outline-offset: 8px; 
-            transform: scale(1.15); background: #333; z-index: 10;
-        }
-
-        /* 答對動畫 */
-        .correct-anim { transform: scale(1.4); border-color: var(--success) !important; }
+        .highlight { outline: 8px solid var(--highlight); transform: scale(1.1); }
+        .correct-anim { transform: scale(1.3); border-color: var(--success) !important; }
         .win-flash { background-color: #06331a !important; }
-
-        svg { width: 75%; height: 75%; }
         
-        .gaze-track {
-            position: absolute; bottom: -20px; left: 0; width: 100%; height: 10px;
-            background: #222; border-radius: 5px; overflow: hidden;
-        }
-        .gaze-fill { height: 100%; background: white; width: 0%; }
+        svg { width: 70%; height: 70%; pointer-events: none; }
         
-        .mode-indicator { font-size: 18px; color: #aaa; }
+        /* 拖動中的樣式 */
+        .dragging { opacity: 0.5; transform: scale(1.1); z-index: 100; }
     </style>
 </head>
 <body>
 
 <div id="overlay">
-    <h1 style="margin-bottom: 40px;">視覺配對練習</h1>
-    <button class="big-btn" onclick="initStart()">開始</button>
+    <button class="big-btn" onclick="initStart()">開始遊戲</button>
 </div>
 
 <div id="app">
     <div class="nav">
-        <button onclick="toggleMode()" id="modeBtn">切換至：掃描模式</button>
-        <div class="mode-indicator" id="statusText">當前：拖拉 / 點擊模式</div>
-        <button onclick="toggleFullScreen()">全螢幕</button>
+        <button onclick="setMode('click')" id="btn-click">點擊模式</button>
+        <button onclick="setMode('drag')" id="btn-drag">拖拉模式</button>
+        <button onclick="setMode('scan')" id="btn-scan">掃描模式 (空白鍵)</button>
+        <div id="mode-label" style="margin-left:auto; align-self:center; color:#aaa;">當前：點擊模式</div>
     </div>
 
     <div class="main-stage">
-        <div class="target-area">
-            <div style="font-size: 24px; margin-bottom: 15px; color: #888;">請找出這個圖形：</div>
+        <div class="target-area" id="dropZone">
+            <div id="instr" style="margin-bottom:10px;">請找出：</div>
             <div class="target-box" id="targetBox"></div>
         </div>
 
-        <div class="options-area" id="optionsGrid">
-            </div>
+        <div class="options-area" id="optionsGrid"></div>
     </div>
 </div>
 
 <script>
     const shapes = [
-        { id: 'star', name: '星型', color: '#f1c40f', svg: '<svg viewBox="0 0 100 100"><polygon points="50,5 61,35 95,35 67,57 78,91 50,70 22,91 33,57 5,35 39,35" fill="currentColor"/></svg>' },
-        { id: 'circle', name: '圓形', color: '#3498db', svg: '<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="currentColor"/></svg>' },
-        { id: 'triangle', name: '三角形', color: '#e74c3c', svg: '<svg viewBox="0 0 100 100"><polygon points="50,15 90,85 10,85" fill="currentColor"/></svg>' },
-        { id: 'square', name: '正方形', color: '#2ecc71', svg: '<svg viewBox="0 0 100 100"><rect x="15" y="15" width="70" height="70" fill="currentColor"/></svg>' }
+        { id: 'star', name: '星型', color: 'yellow', svg: '<svg viewBox="0 0 100 100"><polygon points="50,5 61,35 95,35 67,57 78,91 50,70 22,91 33,57 5,35 39,35" fill="yellow"/></svg>' },
+        { id: 'circle', name: '圓形', color: 'blue', svg: '<svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="blue"/></svg>' },
+        { id: 'triangle', name: '三角形', color: 'red', svg: '<svg viewBox="0 0 100 100"><polygon points="50,15 90,85 10,85" fill="red"/></svg>' },
+        { id: 'square', name: '正方形', color: 'green', svg: '<svg viewBox="0 0 100 100"><rect x="15" y="15" width="70" height="70" fill="green"/></svg>' }
     ];
 
     let currentTarget = null;
-    let isScanMode = false;
+    let gameMode = 'click'; // click, drag, scan
     let scanIdx = -1;
     let scanTimer = null;
-    let isProcessing = false;
+    let isLocked = false;
 
     function speak(text) {
         window.speechSynthesis.cancel();
         const utter = new SpeechSynthesisUtterance(text);
         utter.lang = 'zh-HK';
-        utter.rate = 0.8;
         window.speechSynthesis.speak(utter);
     }
 
     function initStart() {
         document.getElementById('overlay').style.display = 'none';
-        document.getElementById('app').style.opacity = '1';
+        document.getElementById('app').style.visibility = 'visible';
+        setMode('click');
         newRound();
     }
 
+    function setMode(mode) {
+        gameMode = mode;
+        clearInterval(scanTimer);
+        document.querySelectorAll('.nav button').forEach(b => b.style.background = "");
+        document.getElementById(`btn-${mode}`).style.background = "#2980b9";
+        document.getElementById('mode-label').innerText = `當前：${mode === 'click' ? '點擊' : mode === 'drag' ? '拖拉' : '掃描'}模式`;
+        
+        // 重置所有狀態
+        document.querySelectorAll('.shape-card').forEach(c => {
+            c.classList.remove('highlight');
+            c.setAttribute('draggable', mode === 'drag');
+        });
+
+        if(mode === 'scan') startScanning();
+    }
+
     function newRound() {
-        isProcessing = false;
+        isLocked = false;
         document.body.classList.remove('win-flash');
         document.getElementById('targetBox').classList.remove('correct-anim');
         
-        // 洗牌選項
-        const shuffled = [...shapes].sort(() => Math.random() - 0.5);
         const grid = document.getElementById('optionsGrid');
         grid.innerHTML = '';
+        const shuffled = [...shapes].sort(() => Math.random() - 0.5);
 
         shuffled.forEach(s => {
             const card = document.createElement('div');
             card.className = 'shape-card';
             card.id = s.id;
-            card.style.color = s.color;
-            card.innerHTML = s.svg + `<div class="gaze-track"><div class="gaze-fill" id="fill-${s.id}"></div></div>`;
-            
-            card.onclick = () => { if(!isScanMode) checkMatch(s.id); };
+            card.innerHTML = s.svg;
+            card.setAttribute('draggable', gameMode === 'drag');
+
+            // --- 點擊邏輯 ---
+            card.onclick = () => {
+                if(gameMode === 'click' && !isLocked) checkMatch(s.id);
+            };
+
+            // --- 拖拉邏輯 (PC) ---
+            card.ondragstart = (e) => {
+                if(gameMode !== 'drag' || isLocked) return e.preventDefault();
+                e.dataTransfer.setData('text', s.id);
+                card.classList.add('dragging');
+            };
+            card.ondragend = () => card.classList.remove('dragging');
+
             grid.appendChild(card);
         });
 
-        // 設定目標
         currentTarget = shapes[Math.floor(Math.random() * shapes.length)];
         document.getElementById('targetBox').innerHTML = currentTarget.svg;
-        document.getElementById('targetBox').style.color = currentTarget.color;
-
-        setTimeout(() => speak(`請搵出${currentTarget.name}`), 300);
+        speak(`請搵出${currentTarget.name}`);
         
-        if(isScanMode) startScanning();
+        if(gameMode === 'scan') startScanning();
     }
 
-    function checkMatch(id) {
-        if(isProcessing) return;
-        isProcessing = true;
-        clearInterval(scanTimer);
+    // --- 放置邏輯 (拖拉模式專用) ---
+    const dropZone = document.getElementById('dropZone');
+    dropZone.ondragover = (e) => e.preventDefault();
+    dropZone.ondrop = (e) => {
+        if(gameMode === 'drag' && !isLocked) {
+            const draggedId = e.dataTransfer.getData('text');
+            checkMatch(draggedId);
+        }
+    };
 
+    function checkMatch(id) {
+        if(isLocked) return;
+        isLocked = true;
+        
         if(id === currentTarget.id) {
             document.body.classList.add('win-flash');
             document.getElementById('targetBox').classList.add('correct-anim');
-            speak("答對了，好叻呀！");
-            setTimeout(newRound, 2500);
+            speak("答對了！");
+            setTimeout(newRound, 2000);
         } else {
-            speak("唔啱喎，再試下");
-            setTimeout(() => {
-                isProcessing = false;
-                if(isScanMode) startScanning();
-            }, 1200);
+            speak("唔啱，再試下");
+            setTimeout(() => { 
+                isLocked = false; 
+                if(gameMode === 'scan') startScanning();
+            }, 1000);
         }
     }
 
@@ -195,40 +205,21 @@
         clearInterval(scanTimer);
         const cards = document.querySelectorAll('.shape-card');
         scanIdx = -1;
-        
-        const scan = () => {
+        scanTimer = setInterval(() => {
+            if(isLocked) return;
             scanIdx = (scanIdx + 1) % cards.length;
             cards.forEach(c => c.classList.remove('highlight'));
             cards[scanIdx].classList.add('highlight');
-            // 掃描時讀出形狀名（可選）
-            // speak(shapes.find(s => s.id === cards[scanIdx].id).name);
-        };
-        scan();
-        scanTimer = setInterval(scan, 2500);
+        }, 2000);
     }
 
-    function toggleMode() {
-        isScanMode = !isScanMode;
-        document.getElementById('modeBtn').innerText = isScanMode ? "切換至：拖拉模式" : "切換至：掃描模式";
-        document.getElementById('statusText').innerText = isScanMode ? "當前：拍制掃描模式" : "當前：拖拉 / 點擊模式";
-        if(isScanMode) startScanning(); else {
-            clearInterval(scanTimer);
-            document.querySelectorAll('.shape-card').forEach(c => c.classList.remove('highlight'));
-        }
-    }
-
-    function toggleFullScreen() {
-        if (!document.fullscreenElement) document.documentElement.requestFullscreen();
-        else document.exitFullscreen();
-    }
-
-    // 拍制支援 (空白鍵)
-    window.addEventListener('keydown', (e) => {
-        if(e.code === 'Space' && isScanMode && !isProcessing) {
+    // 拍制支援
+    window.onkeydown = (e) => {
+        if(e.code === 'Space' && gameMode === 'scan' && !isLocked) {
             const cards = document.querySelectorAll('.shape-card');
             if(scanIdx !== -1) checkMatch(cards[scanIdx].id);
         }
-    });
+    };
 </script>
 </body>
 </html>
